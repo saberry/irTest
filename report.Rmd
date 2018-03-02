@@ -1,0 +1,176 @@
+---
+title: "Pre-Interview Exercise -- Report"
+author: "Seth Berry"
+date: "March 02, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, fig.width = 10, message = FALSE)
+```
+
+## Raw Data Exploration
+
+The data table below contains the raw proportions for each peer institution, broken down by field.
+
+
+```{r}
+library(dplyr)
+
+wrangledData = read.csv("data/wrangledData.csv")
+
+groupedData = wrangledData %>% 
+  transmute(INSTNM, unitid, cipcode, year, 
+            LONGITUD, LATITUDE, majorField,
+            americanIndianProp = americanIndianTotal/ total, 
+            asianProp = asianTotal / total, 
+            blackProp = blackTotal / total, 
+            hispanicProp = hispanicTotal / total, 
+            whiteProp = whiteTotal / total, 
+            nonResProp = nonresTotal / total)
+
+groupedData$INSTNM = dplyr::recode(wrangledData$INSTNM, 
+                                    "California Institute of Technology" = "California\nIT", 
+                                    "Carnegie Mellon University" = "Carnegie Mellon", 
+                                    "Case Western Reserve University" = "Case Western", 
+                                    "Columbia University in the City of New York" = "Columbia", 
+                                    "George Washington University" = "George Washington", 
+                                    "Massachusetts Institute of Technology" = "MIT", 
+                                    "Johns Hopkins University" = "Johns Hopkins", 
+                                    "New York University" = "NYU", 
+                                    "Rensselaer Polytechnic Institute" = "Rensselaer", 
+                                    "Tulane University of Louisiana" = "Tulane", 
+                                    "University of Chicago" = "University\nChicago", 
+                                    "University of Miami" = "University\nMiami", 
+                                    "University of Notre Dame" = "University\nND", 
+                                    "University of Pennsylvania" = "University\nPennsylvania", 
+                                    "University of Rochester" = "University\nRochester", 
+                                    "University of Southern California" = "USC", 
+                                    "Wake Forest University" = "Wake Forest", 
+                                    "Washington University in St Louis" = "WUSL")
+
+
+groupedData  = groupedData %>% 
+  mutate(INSTNM = gsub(" ", "\n", .$INSTNM)) %>% 
+  group_by(INSTNM, majorField, year)
+
+
+summaryData = groupedData %>% 
+  summarize(americanIndian = round(mean(americanIndianProp, na.rm = TRUE), 2), 
+            asian = round(mean(asianProp, na.rm = TRUE), 2), 
+            black = round(mean(blackProp, na.rm = TRUE), 2), 
+            hispanic = round(mean(hispanicProp, na.rm = TRUE), 2),
+            white = round(mean(whiteProp, na.rm = TRUE), 2), 
+            nonRes = round(mean(nonResProp, na.rm = TRUE), 2))
+
+library(ggplot2); library(tidyr); library(ggthemes); library(plotly)
+
+summaryMelted = summaryData %>%
+  gather(key = "group", value = "proportion", -INSTNM, -majorField, -year) %>%
+  unite(., yearField, year, majorField, sep = "_", remove = FALSE)
+
+
+
+
+wrangledData %>% 
+  transmute(INSTNM, unitid, cipcode, year, 
+            LONGITUD, LATITUDE, majorField,
+            americanIndianProp = americanIndianTotal/ total, 
+            asianProp = asianTotal / total, 
+            blackProp = blackTotal / total, 
+            hispanicProp = hispanicTotal / total, 
+            whiteProp = whiteTotal / total, 
+            nonResProp = nonresTotal / total) %>% 
+  mutate(INSTNM = gsub(" ", "\n", .$INSTNM)) %>% 
+  group_by(INSTNM, majorField, year) %>% 
+  summarize(americanIndian = round(mean(americanIndianProp, na.rm = TRUE), 2), 
+            asian = round(mean(asianProp, na.rm = TRUE), 2), 
+            black = round(mean(blackProp, na.rm = TRUE), 2), 
+            hispanic = round(mean(hispanicProp, na.rm = TRUE), 2),
+            white = round(mean(whiteProp, na.rm = TRUE), 2), 
+            nonRes = round(mean(nonResProp, na.rm = TRUE), 2)) %>% 
+  DT::datatable(., colnames = c("Institution\nName", "Field", 
+                                "Year", "American\nIndian", 
+                                "Asian", "Black", "Hispanic", 
+                                "White", "Non\nResident"))
+
+```
+
+## Notre Dame: Then And Now
+
+When looking at Notre Dame only, we see some distinct patterns emerge. In STEM fields, we see an increase in doctoral degrees awarded to white students. This is coupled with an arguable decrease in doctoral degrees awarded to people identifying as something other than white. The humanities have seen a reversed trend, with doctoral degrees being granted to a more diverse student group. Please note that you may interact with the visualization below (e.g., click and drag to zoom, double-click a group to focus on that group only or select individual groups) and that each bar grouping is arranged in year order (2003 through 2005 and 2013 through 2015).
+
+```{r}
+test3 = ggplot(summaryMelted[which(summaryMelted$INSTNM == "University\nND"), ], 
+       mapping = aes(majorField, proportion, fill = group,
+                     group = year)) + 
+  geom_col(position = "dodge", alpha = .5) +
+  theme_minimal() + 
+  scale_fill_ptol()
+
+ggplotly(test3, tooltip = c("x", "y"))
+
+```
+
+
+## Peer Comparisons -- This Decade
+
+In examining all non-white students earning a doctoral degree, it appears that Notre Dame is doing well (proportionally) over the last three years compared to many universities; this is especially true for STEM fields. Notre Dame does lag a bit behind universities such as CMU and California Institute of Technology, but is in no way the least diverse intitution among the peer set.
+
+
+
+Please note that each bar grouping is arranged in year order (**2013** through **2015**).
+
+```{r, fig.height = 11}
+
+test4 = summaryMelted %>% 
+  filter(year > 2012) %>% 
+  ggplot(summaryMelted, 
+       mapping = aes(majorField, proportion, fill = group,
+                     group = year)) + 
+  geom_col(position = "dodge", alpha = .5) +
+  facet_wrap( ~ INSTNM) +
+  theme_minimal() + 
+  scale_fill_ptol() +
+  theme(axis.title.x = element_blank(), 
+        axis.text.x  = element_text(angle = 90, vjust = 0.5))
+
+ggplotly(test4, tooltip = c("x", "y"))
+```
+
+
+
+### Peer Comparisons -- 2015 Only
+
+Focusing on 2015 in isolation provides an interesting 
+
+```{r, fig.height = 11}
+
+test5 = summaryMelted %>% 
+  filter(year == 2015) %>% 
+  ggplot(summaryMelted, 
+       mapping = aes(majorField, proportion, fill = group,
+                     group = year)) + 
+  geom_col(position = "dodge", alpha = .5) +
+  facet_wrap( ~ INSTNM) +
+  theme_minimal() + 
+  scale_fill_ptol() +
+  theme(axis.title.x = element_blank(), 
+        axis.text.x  = element_text(angle = 90, vjust = 0.5))
+
+ggplotly(test5, tooltip = c("x", "y"))
+```
+
+```{r}
+# ggplot(summaryData[which(summaryData$INSTNM == "University of Notre Dame"), ]) + 
+#   geom_area(aes(as.factor(year), americanIndian, fill = majorField), alpha = .5) +
+#   geom_area(aes(as.factor(year), asian, fill = majorField), alpha = .5) +
+#   geom_area(aes(as.factor(year), black, fill = majorField), alpha = .5) +
+#   geom_area(aes(as.factor(year), hispanic, fill = majorField), alpha = .5) +
+#   geom_area(aes(as.factor(year), white, fill = majorField), alpha = .5) +
+#   geom_area(aes(as.factor(year), nonRes, fill = majorField), alpha = .5) +
+#   # facet_wrap( ~ INSTNM) +
+#   theme_minimal() + 
+#   scale_fill_ptol()
+```
+

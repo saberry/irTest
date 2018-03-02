@@ -1,0 +1,282 @@
+---
+title: "Pre-Interview Exercise -- Data Prep"
+author: "Seth Berry"
+date: "February 28, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE, comment = "", message = FALSE, warning = FALSE)
+```
+
+## Downloading Data
+
+This section will be split between two section: data and dictionaries.
+
+### Data
+
+When working with web-housed data, it is important to establish a reproducible framework for downloading and reading the data. The following code offers a demonstration of how to automate the process. The following chunk will deal nicely with the single file from *Institutional Characteristics*:
+
+```{r}
+download.file("https://nces.ed.gov/ipeds/datacenter/data/HD2015.zip", 
+              "data/hd2015.zip")
+
+# unzip("data/hd2015", exdir = "data")
+```
+
+If you wanted to permanently unzip the folder, you could run the commented code -- it is likely best to leave them zipped. We will just unzip during the reading process.
+
+The previous file was just a discreet file. When we need to do something repetivite, we need to produce the appropriate code for automation. We first create a set of links for our data and then run code over those links to download the zip files.  
+```{r}
+dataLinks = paste("https://nces.ed.gov/ipeds/datacenter/data/C", 
+                  c(2003:2005, 2013:2015), "_A.zip", sep = "")
+
+lapply(dataLinks, function(x) {
+  dataName = stringr::str_extract(string = x, pattern = "(C[0-9]{4}_A)")
+  dataName = tolower(dataName)
+  dataYear = stringr::str_extract(string = x, pattern = "[0-9]{4}")
+  temp = paste("data/", dataName, ".zip", sep = "")
+  download.file(url = x, destfile = temp)
+  # unzip(zipfile = paste("data/", dataName, ".zip", sep = ""), exdir = "data")
+})
+```
+
+
+### Dictionaries
+
+The dictionaries will follow a similar process, with a few small differences -- namely that we are going to unzip the downloaded file and then remove the zip file.
+
+```{r}
+dictLinks = c("https://nces.ed.gov/ipeds/datacenter/data/HD2015_Dict.zip",
+               paste("https://nces.ed.gov/ipeds/datacenter/data/C", 
+                  c(2003:2005, 2013:2015), "_A_Dict.zip", sep = ""))
+
+lapply(dictLinks, function(x) {
+  dictName = stringr::str_extract(string = x, pattern = "(HD[0-9]{4}_Dict)")
+  dictName = tolower(dictName)
+  dictYear = stringr::str_extract(string = x, pattern = "[0-9]{4}")
+  temp = paste("data/dictionaries/", dictName, ".zip", sep = "")
+  download.file(url = x, destfile = temp)
+  unzip(zipfile = temp, exdir = "data/dictionaries")
+  unlink(temp)
+})
+```
+
+
+## Reading Data
+
+The download and read could certainly be combined into one step. However, this would create a burden when needing to import the data again. To that end, it is best to keep them as two discreet steps -- even if it creates more lines of code. 
+
+The following chunk will read in everything we have for completion data. We will get all of the zip files containing "_a", unzip, read, combine, and finally write to a csv for easy importing. One important step is to convert the names for all variables to lowercase -- it looks like there is a mix between the years and that is going to cause problems if we don't fix it at the root. There are going to be issues with the variable naming, but that will get fixed down the road.
+
+```{r}
+completionFiles = list.files(path = "data/", pattern = ".*a.zip", all.files = TRUE, 
+                             recursive = TRUE, include.dirs = FALSE, full.names = TRUE)
+
+completionData = lapply(completionFiles, function(x) {
+  dataName = stringr::str_extract(string = x, pattern = "(c[0-9]{4}_a)")
+  dataYear = stringr::str_extract(string = x, pattern = "[0-9]{4}")
+  dat = read.csv(unz(x, paste(dataName, ".csv", sep = "")))
+  dat$year = dataYear
+  names(dat) = tolower(names(dat))
+  return(dat)
+})
+
+completionData = data.table::rbindlist(completionData, fill = TRUE)
+
+library(dplyr)
+
+write.csv(completionData, "data/completionData.csv", row.names = FALSE)
+
+```
+
+
+Let's take just a little peak at our data:
+
+```{r, echo = FALSE, eval = TRUE}
+completionData = read.csv("data/completionData.csv")
+
+dplyr::glimpse(completionData)
+```
+
+
+Now we can read our Institutional Characteristics data:
+
+```{r, eval = TRUE}
+instChar = read.csv(unz("data/hd2015.zip", "hd2015.csv"))
+```
+
+We won't worry about writing it out to its own csv file -- it is just as easy to read it from the zip file.
+
+To this point, we have our dictionaries and our data pulled in an automated fashion.
+
+## Data Wrangling
+
+A reasonable first step would be to extract the information about the private and aspirant institutions. We will get the university name and unique id from the "hd2015" data.
+
+```{r, eval = TRUE}
+library(dplyr)
+
+peers = c("Boston University", "Brandeis University", "Brown University",
+"California Institute of Technology", "Carnegie Mellon University",
+"Case Western Reserve University", "Columbia University in the City of New York",
+"Cornell University", "Duke University", "Emory University", "Harvard University",
+"Johns Hopkins University", "Massachusetts Institute of Technology",
+"New York University", "Northwestern University", "Princeton University",
+"Rice University", "Stanford University", "Tulane University of Louisiana",
+"University of Chicago", "University of Pennsylvania", "University of Rochester",
+"University of Southern California", "Vanderbilt University",
+"Washington University in St Louis", "Yale University",
+"Boston College", "Dartmouth College", "George Washington University",
+"Georgetown University", "Rensselaer Polytechnic Institute",
+"Tufts University", "University of Miami", "Wake Forest University", 
+"University of Notre Dame")
+
+instChar = instChar[instChar$INSTNM %in% peers, ] %>% 
+  select(UNITID, INSTNM, LONGITUD, LATITUDE)
+```
+
+We can take a glimpse of what we have there:
+
+```{r, eval = TRUE}
+glimpse(instChar)
+```
+
+
+That will leave us with information about our 34 peer institutions and the University of Notre Dame.
+
+The next step would be to isolate specific CIP codes that revolve around the three areas of interest: STEM, Social Sciences, and Humanities.
+
+```{r}
+cip = readxl::read_excel("data/CIP Codes for Pre-Interview Exercise.xlsx")
+```
+
+
+Recall that we wrote our completion data out to a csv file, so we can bring that back in now, join our IDs, and then filter:
+
+```{r}
+completionData = read.csv("data/completionData.csv")
+```
+
+If we run a quick check, we can see that we have the correct number of institutions still:
+
+```{r}
+length(unique(completionData$INSTNM))
+```
+
+
+```{r, echo = FALSE, eval = TRUE}
+completionData = completionData %>% 
+  left_join(., instChar, by = c("unitid" = "UNITID"))
+
+completionData = completionData[!(is.na(completionData$INSTNM)), ]
+
+length(unique(completionData$INSTNM))
+```
+
+
+We can also use our knowledge about the award level coding to subset our data a bit further. The documentation notes that a doctoral degree was coded as 9 in 2003 through 2005 and a research doctoral degree was coded as 17 in 2013 through 2015. If we were wanting to explore other degree levels, we would take a completely different approach. We are finding the rows with the highest degree and keeping only those.
+
+```{r}
+completionData = completionData %>% 
+  mutate(highDegree = ifelse(year == 2003 & awlevel == 9, 1, 
+                             ifelse(year == 2004 & awlevel == 9, 1, 
+                                    ifelse(year == 2005 & awlevel == 9, 1, 
+                                           ifelse(year == 2013 & awlevel == 17, 1, 
+                                                  ifelse(year == 2014 & awlevel == 17, 1, 
+                                                         ifelse(year == 2015 & awlevel == 17, 1, 0))))))) %>% 
+  filter(highDegree == 1)
+```
+
+
+Now, we can do a bit of variable selection on completion data. We can start by dropping the imputed fields -- those are not too terribly interesting to us right now (but certainly might be for other endeavours).
+
+```{r}
+completionData = completionData %>% 
+  select(unitid, cipcode, majornum, matches("[0-9]+"), 
+         ends_with("t"), INSTNM, LONGITUD, LATITUDE, year,
+         -starts_with("x"))
+```
+
+For one of the last little bits of data prep, we need to take care of the variable names. Unfortunately, there is no easy way to do this -- we are going to have to do some manual digging and combining. We will use the totals, so we need to add the appropriate columns from the old format data. Do note that some issues exist in the difference between the old and new race/ethnicity categories (e.g., Asian, Pacific Islander, and Hawaiian conflation, not multiples).
+
+```{r}
+oldData = completionData %>% 
+  filter(year == 2003 | year == 2004 | year == 2005) %>% 
+  mutate(americanIndianTotal = crace05 + crace06, 
+         asianTotal = crace07 + crace08, 
+         blackTotal = crace03 + crace04, 
+         hispanicTotal = crace09 + crace10,
+         whiteTotal = crace11 + crace12,
+         unknownTotal = crace13 + crace14, 
+         nonresTotal = crace01 + crace02, 
+         total = crace24) %>% 
+  select(INSTNM, unitid, cipcode, majornum, year, ends_with("total"), 
+         LONGITUD, LATITUDE)
+
+newData = completionData %>% 
+  filter(year == 2013 | year == 2014 | year == 2015) %>% 
+  select(INSTNM, unitid, cipcode, majornum, year, caiant, 
+         casiat, cbkaat, chispt, cwhitt, cunknt, 
+         cnralt, ctotalt, LONGITUD, LATITUDE) %>% 
+  rename(americanIndianTotal = caiant, 
+         asianTotal = casiat, 
+         blackTotal = cbkaat, 
+         hispanicTotal = chispt, 
+         whiteTotal = cwhitt, 
+         unknownTotal = cunknt, 
+         nonresTotal = cnralt, 
+         total = ctotalt)
+
+wrangledData = rbind(oldData, newData)
+```
+
+
+Now, we can take a moment to unclench our jaws and breath! Be ready to bite down again soon.
+
+We have one more wrangling step, and that is to create our three major areas. To this point, everything has been pretty standard; however, there are so many different ways to classify majors. We cannot let that detract us, though, so let's go with the following guided by Wikipedia:
+
+Humanities = Classics, History, Linguistics, Law, Literature, Performing Arts, Philosophy, Religion, Visual Arts
+
+Social Sciences = Anthropology, Communications, Economics, Education, Geography, Political Science, Psychology, Sociology
+
+STEM = Biology, Chemistry, Computer Science, Engineering, Mathematics, Physics, Robotics
+
+With that, we will have to group the 47 cip codes into those various things. In our report, we will need to mention the amount of discretization that has gone on here. In reality, we would want some true operational definitions before starting this task.
+
+Let's remove some annoying 99 codes (which I will never understand) and create some new variables.
+
+```{r}
+humanitiesCIP = c(5, 12, 16, 19, 22:25, 30:39, 44, 50:51, 54) 
+
+ssCIP = c(9, 10, 13, 42, 45, 52)
+
+stemCIP = c(1, 3, 4, 11, 14:15, 26:29, 40:41, 43, 46:49)
+
+wrangledData = wrangledData %>% 
+  filter(cipcode != 99) %>% 
+  mutate(cip2Code = stringr::str_extract(cipcode, "^[0-9]{1,2}"))
+
+wrangledData$majorField = ""
+
+wrangledData$majorField[which(wrangledData$cip2Code %in% humanitiesCIP)] = "humanities"
+
+wrangledData$majorField[which(wrangledData$cip2Code %in% ssCIP)] = "social sciences"
+
+wrangledData$majorField[which(wrangledData$cip2Code %in% stemCIP)] = "stem"
+```
+
+This data looks pretty good. Let's save it out and flip over to reporting!
+
+
+```{r, eval = TRUE, echo = FALSE}
+wrangledData = read.csv("data/wrangledData.csv")
+
+glimpse(wrangledData)
+```
+
+
+```{r}
+write.csv(wrangledData, "data/wrangledData.csv", row.names = FALSE)
+```
+
