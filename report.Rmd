@@ -61,12 +61,15 @@ summaryData = groupedData %>%
             black = round(mean(blackProp, na.rm = TRUE), 2), 
             hispanic = round(mean(hispanicProp, na.rm = TRUE), 2),
             white = round(mean(whiteProp, na.rm = TRUE), 2), 
-            nonRes = round(mean(nonResProp, na.rm = TRUE), 2))
+            nonRes = round(mean(nonResProp, na.rm = TRUE), 2), 
+            lat = unique(LATITUDE), 
+            lon = unique(LONGITUD))
 
 library(ggplot2); library(tidyr); library(ggthemes); library(plotly)
 
 summaryMelted = summaryData %>%
-  gather(key = "group", value = "proportion", -INSTNM, -majorField, -year) %>%
+  gather(key = "group", value = "proportion", -INSTNM, -majorField, -year, 
+         -lon, -lat) %>%
   unite(., yearField, year, majorField, sep = "_", remove = FALSE)
 
 
@@ -98,7 +101,9 @@ wrangledData %>%
 
 ## Notre Dame: Then And Now
 
-When looking at Notre Dame only, we see some distinct patterns emerge. In STEM fields, we see an increase in doctoral degrees awarded to white students. This is coupled with an arguable decrease in doctoral degrees awarded to people identifying as something other than white. The humanities have seen a reversed trend, with doctoral degrees being granted to a more diverse student group. Please note that you may interact with the visualization below (e.g., click and drag to zoom, double-click a group to focus on that group only or select individual groups) and that each bar grouping is arranged in year order (2003 through 2005 and 2013 through 2015).
+When looking at Notre Dame only, we see some distinct patterns emerge. In STEM fields, we see a potentially meaningful increase in doctoral degrees awarded to White students. This is coupled with an arguable decrease in doctoral degrees awarded to people identifying as something other than White. The humanities have seen a reversed trend, with doctoral degrees being granted to a more diverse student group (especially students identifying as Hispanic). 
+
+Please note that you may interact with the visualization below (e.g., click and drag to zoom, double-click a group to focus on that group only or select individual groups) and that each bar grouping is arranged in year order (2003 through 2005 and 2013 through 2015).
 
 ```{r}
 test3 = ggplot(summaryMelted[which(summaryMelted$INSTNM == "University\nND"), ], 
@@ -113,11 +118,32 @@ ggplotly(test3, tooltip = c("x", "y"))
 ```
 
 
+## Peer Comparisons -- Then And Now
+
+In the visualization below, there is one important take-away message: no institution within Notre Dame's peer group has seen explosive growth in the proportion of doctoral degrees confired to non-White students in any field (it also highlights CMU's continued superiority in attracting and matriculating diverse students in Social Sciences and STEM fields).
+
+Note that the bars are arranged in year order (2003 through 2005 and 2013 through 2015) across the three major fields.
+
+```{r, fig.height = 11}
+
+test4 = summaryMelted %>% 
+  ggplot(summaryMelted, 
+       mapping = aes(majorField, proportion, fill = group,
+                     group = year)) + 
+  geom_col(position = "dodge", alpha = .5) +
+  facet_wrap( ~ INSTNM) +
+  theme_minimal() + 
+  scale_fill_ptol() +
+  theme(axis.title.x = element_blank(), 
+        axis.text.x  = element_text(angle = 90, vjust = 0.5))
+
+ggplotly(test4, tooltip = c("x", "y"))
+```
+
+
 ## Peer Comparisons -- This Decade
 
-In examining all non-white students earning a doctoral degree, it appears that Notre Dame is doing well (proportionally) over the last three years compared to many universities; this is especially true for STEM fields. Notre Dame does lag a bit behind universities such as CMU and California Institute of Technology, but is in no way the least diverse intitution among the peer set.
-
-
+In examining all non-white students earning a doctoral degree, it appears that Notre Dame is doing well (proportionally) over the last three years compared to many universities; this is especially true for STEM fields. Notre Dame does lag a bit behind universities such as CMU and California Institute of Technology, but is in no way the least diverse intitution among the peer set. Over the three years, Notre Dame appears to sit around the middle of the peer group.
 
 Please note that each bar grouping is arranged in year order (**2013** through **2015**).
 
@@ -142,7 +168,7 @@ ggplotly(test4, tooltip = c("x", "y"))
 
 ### Peer Comparisons -- 2015 Only
 
-Focusing on 2015 in isolation provides an interesting 
+Focusing on 2015 in isolation provides an interesting snapshot. Across the three fields, Notre Dame had a higher proportion of doctoral degrees granted to White students than many of our peer instituions (the map below helps to visualize this slightly differently). 
 
 ```{r, fig.height = 11}
 
@@ -174,3 +200,67 @@ ggplotly(test5, tooltip = c("x", "y"))
 #   scale_fill_ptol()
 ```
 
+
+## 2015 Map -- White Only
+
+When interpretting the following maps, while just accounting for one year, there is no clear geographical pattern to student diversity distribution. 
+
+```{r}
+g <- list(
+  scope = 'usa',
+  projection = list(type = 'albers usa'),
+  showland = TRUE,
+  landcolor = toRGB("gray85"),
+  subunitwidth = 1,
+  countrywidth = 1,
+  subunitcolor = toRGB("white"),
+  countrycolor = toRGB("white")
+)
+
+pal <- c("red", "blue", "green")
+
+summaryMelted %>% 
+  filter(year == 2015 & group == "white") %>% 
+plot_geo(locationmode = "USA-states", sizes = c(1, 750), 
+         text = ~paste(INSTNM, "<br>Prop. White: ", proportion, 
+                       "<br>Field:", majorField)) %>% 
+  add_markers(x =~lon, y = ~lat, size = ~proportion, 
+              opacity = .95, color = ~majorField) %>% 
+  layout(geo = g)
+  
+
+  
+```
+
+
+## 2015 Map -- All Non-White
+
+Again, just another glimpse that Notre Dame was in the middle with regard to diversity of doctoral students in 2015.
+
+```{r}
+g <- list(
+  scope = 'usa',
+  projection = list(type = 'albers usa'),
+  showland = TRUE,
+  landcolor = toRGB("gray85"),
+  subunitwidth = 1,
+  countrywidth = 1,
+  subunitcolor = toRGB("white"),
+  countrycolor = toRGB("white")
+)
+
+pal <- c("red", "blue", "green")
+
+summaryMelted %>% 
+  filter(year == 2015 & group != "white") %>% 
+plot_geo(locationmode = "USA-states", sizes = c(1, 750), 
+         text = ~paste(INSTNM, "<br>Prop: ", proportion, 
+                       "<br>Field: ", majorField, 
+                       "<br>Group: ", group)) %>% 
+  add_markers(x =~lon, y = ~lat, size = ~proportion, 
+              opacity = .95, symbol = ~group, color = ~majorField) %>% 
+  layout(geo = g)
+  
+
+  
+```
